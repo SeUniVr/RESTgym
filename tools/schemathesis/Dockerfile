@@ -1,0 +1,1 @@
+FROM restgym/schemathesis-tool:1.0.0

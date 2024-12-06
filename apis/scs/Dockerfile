@@ -1,0 +1,1 @@
+FROM restgym/scs-api:1.0.0

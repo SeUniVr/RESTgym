@@ -1,0 +1,1 @@
+FROM restgym/languagetool-api:1.0.0

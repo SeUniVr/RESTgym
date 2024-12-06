@@ -1,0 +1,1 @@
+FROM restgym/resttestgen-tool:1.0.0
