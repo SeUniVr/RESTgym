@@ -35,12 +35,12 @@ def count_coverage_samples(run):
 # Perform integrity analysis
 def analyze():
     runs = collect_runs()
-    print(f"Analizing {len(runs)} runs.")
+    print(f"Analyzing {len(runs)} runs.")
     analized = {}
     for run in runs:
         # Init dictionary to store results
         result = {}
-        # Verify started.txt esists
+        # Verify started.txt exists
         result['started'] = os.path.exists(f"{run}/started.txt")
         # Verify completed.txt exists
         result['completed'] = os.path.exists(f"{run}/completed.txt")
