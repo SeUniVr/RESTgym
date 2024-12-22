@@ -1,0 +1,27 @@
+{
+  "groups": [
+    {
+      "name": "twilio",
+      "type": "com.pfa.pack.config.twilio.TwilioConfig",
+      "sourceType": "com.pfa.pack.config.twilio.TwilioConfig"
+    }
+  ],
+  "properties": [
+    {
+      "name": "twilio.account-sid",
+      "type": "java.lang.String",
+      "sourceType": "com.pfa.pack.config.twilio.TwilioConfig"
+    },
+    {
+      "name": "twilio.auth-token",
+      "type": "java.lang.String",
+      "sourceType": "com.pfa.pack.config.twilio.TwilioConfig"
+    },
+    {
+      "name": "twilio.trial-number",
+      "type": "java.lang.String",
+      "sourceType": "com.pfa.pack.config.twilio.TwilioConfig"
+    }
+  ],
+  "hints": []
+}
