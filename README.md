@@ -39,6 +39,26 @@ pip install -r requirements.txt
 
 ### Configuration
 
+Most configuration settings for RESTgym are prompted at runtime via the command line. However, some settings can be specified in YAML configuration files. 
+Specifically, RESTgym includes a general configuration file named `restgym-config.yml`, located in the root directory. In this file, you can define two parameters: the minimum number of CPUs and the minimum amount of RAM required on your system before initiating a testing session. These values are utilized for parallelization and further test sessions are executed in parallel as long the specified resources are available. The RESTgym configuration file is in the following format:
+
+```yaml
+minimum_cpus: 4
+minimum_ram_gb: 4
+```
+
+Additionally, each API and tool can be enabled through a configuration file located in their respective directories. Configuration files for APIs are named `restgym-api-config.yml`, while those for tools are named `restgym-tool-config.yml`.
+
+The content is the following:
+
+```yaml
+enabled: true
+```
+
+Set `enabled` to `false` if you want to exclude and API or a tool from the experiment.
+
+By default, only two tools (DeepREST and RESTler) and two APIs (Market and SCS) are enabled to facilitate low-resource consumption dry run of experiments.
+
 ### Usage
 
 #### Building or downloading Docker images

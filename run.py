@@ -6,6 +6,7 @@ import time
 import psutil
 import sys
 import os
+import yaml
 
 
 
@@ -29,7 +30,9 @@ def get_random_free_tcp_port():
 def compute_remaining_runs(desired_runs):
     remaining_runs = []
     apis = common.get_apis()
+    print("Enabled APIs: ", apis)
     tools = common.get_tools()
+    print("Enabled tools: ", tools)
     for api in apis:
         for tool in tools:
             try:
@@ -71,16 +74,30 @@ def filter_runs_with_missing_images(remaining_runs, missing_images):
 
 # Check if there are enough resources for another concurrent run
 def check_resources():
-    REQUIRED_RAM = 32 * 1024 * 1024 * 1024      # 32GB
-    REQUIRED_CPUS = 14
+
+    # Hardcoded minimum resource requirements
+    required_ram = 32 * 1024 * 1024 * 1024      # 32GB
+    required_cpus = 14
+
+    # Override minimum requirements from file config, if available
+    with open("restgym-config.yml") as stream:
+        try:
+            config = yaml.safe_load(stream)
+            required_ram = int(config['minimum_ram_gb']) * 1024 * 1024 * 1024
+            required_cpus = int(config['minimum_cpus'])
+
+        except yaml.YAMLError as exc:
+            print("Could not parse RESTgym configuration file. Continuing with default configuration.")
+            print(exc)
+
     available_ram = getattr(psutil.virtual_memory(), 'available')
     available_cpus = (1 - (psutil.cpu_percent() / 100)) * psutil.cpu_count()
-    return available_ram > REQUIRED_RAM and available_cpus > REQUIRED_CPUS
+    return available_ram > required_ram and available_cpus > required_cpus
 
 # Deeper check of resources (10 checks each second)
 def deep_check_resources():
     for _ in range(10):
-        if check_resources() == False:
+        if not check_resources():
             return False
         time.sleep(1)
     return True
