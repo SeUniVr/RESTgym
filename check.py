@@ -103,18 +103,16 @@ if __name__ == '__main__':
     if choice != '1' and choice != '2':
         print("Invalid choice!")
         sys.exit(1)
-    elif choice == '1':
-        analyze()
-    elif choice == '2':
-        analyzed = analyze()
-        with_problems = []
-        for run in analyzed:
-            for key in analyzed[run]:
-                if analyzed[run][key] == False:
-                    with_problems.append(run)
-                    break
-        if len(with_problems) == 0:
-            print("No runs with problems found.")
-        else:
+    analyzed = analyze()
+    with_problems = []
+    for run in analyzed:
+        for key in analyzed[run]:
+            if analyzed[run][key] == False:
+                with_problems.append(run)
+                break
+    if len(with_problems) == 0:
+        print("No runs with problems found.")
+    else:
+        if choice == '2':
             input(f"Are you sure you want to delete {len(with_problems)}/{len(analyzed)} runs with problems? Press ENTER to continue, or CTRL+C to cancel...")
             clean(with_problems)
