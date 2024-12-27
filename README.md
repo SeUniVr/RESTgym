@@ -63,19 +63,23 @@ By default, only two tools (DeepREST and RESTler) and two APIs (Market and SCS) 
 
 Please follow the steps below to conduct your experiment:
 
-#### Building or downloading Docker images
+#### 1. Building or downloading Docker images
 
 `python3 build.py`
 
 This script manages the building of Docker images for the APIs and testing tools. It builds local images (if available) and downloads our pre-built images from our repositories on Docker Hub ([https://hub.docker.com/u/restgym](https://hub.docker.com/u/restgym)).
 
-#### Experiment execution
+**Output:** Docker images of enabled tools and APIs are build in the host system.
+
+#### 2. Experiment execution
 
 `python3 run.py`
 
 This script orchestrates the execution of testing sessions for each testing tool across all APIs, allowing for multiple repetitions. The executions are parallelized to minimize overall execution time. Upon launch, the script prompts the user for the number of repetitions for each testing tool and API configuration, then executes the remaining sessions. For example, if a previous execution of the script was set to run 3 repetitions and the user relaunches the script specifying a total of 5 repetitions, the script will only execute the 2 remaining repetitions.
 
-#### Integrity check
+**Output:** Experimental testing sessions are executed in containers and results are stored in the `results/` folder.
+
+#### 3. Integrity check
 
 `python3 run.py`
 
@@ -83,8 +87,14 @@ This script check the integrity of the executed testing sessions. It ensures tha
 
 In the event of a corrupted execution, the user will be prompted to decide whether to delete the execution. If the user chooses to delete it, they should re-execute the removed session using the `run.py` script.
 
-#### Processing raw results
+#### 4. Processing raw results
 
 `python3 process_results.py`
 
 This script processes the raw data to extract measures of effectiveness and efficiency, generating a comprehensive report for each execution, along with a cumulative report that summarizes all executions.
+
+**Output:** Comprehensive results are generated for each experimental testing session based on raw data and are saved in a JSON file located in the appropriate sub-folder within the `results/` directory. Additionally, a cumulative summary of all experimental execution results is stored in CSV format in the main `results/` folder.
+
+### Extending RESTgym with your testing tool or API
+
+As an extensible framework, users of RESTgym can contribute with their on testing tool(s) or API(s). If you wish to add your tool or API, please refer to the READMEs in the two directories `apis/#api-template` and `tools/#tool-template`.
