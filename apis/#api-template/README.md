@@ -40,8 +40,8 @@ This line copies all the API directory into the image at the location `/api/`.
 This line copies the provided scripts for metric collection into the Docker image.
 
 ### Lines 16-19: Container execution command
-The last command of a `Dockerfile` starting with `CMD` says to Docker what command to execute when the container is launched.
+The last command of a `Dockerfile` starting with `CMD` instructs Docker with what command to execute when the container is launched.
 - `mkdir -p /results/$API/$TOOL/$RUN` created the nested directories in the `results/` folder to store the results of a specific instance of the container.
 - `sh /infrastructure/jacoco/collect-coverage-interval.sh` starts the code coverage collection script.
-- `mitmdump -p 9090 --mode reverse:http://localhost:8080/ -s /infrastructure/mitmproxy/store-interactions.py` launched MITM proxy in reverse mode on port 9090 with a custom script to store HTTP interaction in a SQLite database.
+- `mitmdump -p 9090 --mode reverse:http://localhost:8080/ -s /infrastructure/mitmproxy/store-interactions.py` launches MITM proxy in reverse mode on port 9090 with a custom script to store HTTP interaction in a SQLite database.
 - `java -javaagent:/infrastructure/jacoco/org.jacoco.agent-0.8.7-runtime.jar=includes=*,output=tcpserver,port=12345,address=* -Dfile.encoding=UTF-8 -jar /api/scs-sut.jar` finally executes the API instrumented by JaCoCo.
