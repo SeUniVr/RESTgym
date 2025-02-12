@@ -5,10 +5,11 @@ This README provides instructions for adding a new API to RESTgym.
 Since in RESTgym APIs run within a Docker container, you will need to package the API into a Docker image using a `Dockerfile`. This image should include all necessary dependencies for the API's execution, such as the Java Virtual Machine (JVM) if the API is written in Java, and any databases it requires. Additionally, the API container should incorporate all tools for metric collection. In this directory (i.e., `apis/#api-template/`), you will find the `Dockerfile` and other files used to build the Docker image for the SCS API. You can use these as a starting point for creating the Docker image for your own API.
 
 ## The API directory
-Each API should be stored in a directory under `apis/`, and it is recommended that the directory name reflects the API's name. For example, the SCS API is located in the `apis/scs/` directory. **Keep this name in mind, as it will be used by RESTgym in scripts and other components. We will refer to this name as 'API slug' now on.**
+Each API should be stored in a directory under `apis/`, and it is recommended that the directory name reflects the API's name. For example, the SCS API is located in the `apis/scs/` directory. **Keep this directory name in mind, as it will be used by RESTgym in scripts and other components. We will refer to this name as 'API slug' now on.**
 
 The content of the API directory should be structured as follows:
 - The executable or the source code of the API (in this case, we have the executable `scs-sut.jar`).
+- The API configuration file for RESTgym, named `restgym-api-config.yml`. Currently, the only supported configuration is `enabled: true/false` to enable or disable the API in RESTgym.
 - The `specifications/` directory, containing Swagger (2.0, preferably in YAML) or OpenAPI (3.0, preferably in JSON) specification for the API. The specification should be named as `aaa.yaml` and `aaa-openapi.json`, where `aaa` has to be replaced with the same slug used for the API directory name (the API slug).
 - The `classes/` directory, containing the Java compiled classes for code coverage computation (only applicable to Java APIs).
 - The `dictionaries/` directory containing dictionaries for tools, such as the LLM dictionary for DeepREST. Dictionaries for DeepREST can be generated with the script available in the DeepREST repository. If no dictionaries are provided to DeepREST, the LLM dictionary feature will not be utilized, which may negatively impact the tool's performance.
