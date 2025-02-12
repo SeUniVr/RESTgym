@@ -1,0 +1,2 @@
+apiUnderTest: experiment-api
+strategyClassName: NominalAndErrorStrategy
