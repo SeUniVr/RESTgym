@@ -353,7 +353,7 @@ def compute_cumulative_results(conn: sqlite3.Connection):
         unique_faults = cursor.execute('SELECT COUNT(DISTINCT error_bucket_id) FROM interactions WHERE error_bucket_id NOT NULL AND id <= ?', (i,)).fetchone()[0]
         timestamps_of_interaction = cursor.execute('SELECT request_timestamp, response_timestamp FROM interactions WHERE id = ?', (i,)).fetchone()
         average_timestamp = round((timestamps_of_interaction[0] + timestamps_of_interaction[1]) / 2)
-        time_of_ith_request = datetime.datetime.fromtimestamp(average_timestamp)# - datetime.timedelta(hours=2)
+        time_of_ith_request = datetime.datetime.fromtimestamp(average_timestamp, datetime.timezone.utc)# - datetime.timedelta(hours=2)
         string_time_of_ith_request = time_of_ith_request.isoformat()
         time_minus_five = time_of_ith_request - datetime.timedelta(seconds=5)
         string_time_minus_five = time_minus_five.isoformat()
