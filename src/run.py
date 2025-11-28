@@ -1,3 +1,5 @@
+import configparser
+
 import common
 import socket
 import random
@@ -7,6 +9,28 @@ import psutil
 import sys
 import os
 import yaml
+from rich.progress import Progress
+
+
+MINIMUM_CPUS = 4
+MINIMUM_RAM_GB = 4
+TIME_BUDGET_MINS = 60
+
+
+# Read configuration form file to override default config
+def read_config():
+    # Override config from file, if available
+    with open(f'{common.RESTGYM_BASE_DIR}/restgym-config.yml') as stream:
+        try:
+            config = yaml.safe_load(stream)
+            global MINIMUM_CPUS, MINIMUM_RAM_GB, TIME_BUDGET_MINS
+            MINIMUM_RAM_GB = int(config['minimum_ram_gb'])
+            MINIMUM_CPUS = int(config['minimum_cpus'])
+            TIME_BUDGET_MINS = int(config['time_budget_mins'])
+
+        except yaml.YAMLError as exc:
+            print("Could not parse RESTgym configuration file. Continuing with default configuration.")
+            print(exc)
 
 
 
@@ -14,7 +38,8 @@ import yaml
 def check_tcp_port(port):
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         return not s.connect_ex(('localhost', port)) == 0
-    
+
+
 # Get random free TCP port
 def get_random_free_tcp_port():
     remaining_attempts = 1000
@@ -26,6 +51,7 @@ def get_random_free_tcp_port():
     print("ERROR: could not find a free TCP port for the API.")
     sys.exit(1)
 
+
 # Compute the remaining runs to execute
 def compute_remaining_runs(desired_runs):
     remaining_runs = []
@@ -36,7 +62,7 @@ def compute_remaining_runs(desired_runs):
     for api in apis:
         for tool in tools:
             try:
-                base_dir = f"./results/{api}/{tool}"
+                base_dir = f"{common.RESTGYM_BASE_DIR}/results/{api}/{tool}"
                 subdirs = os.listdir(base_dir)
                 count = 0
                 for subdir in subdirs:
@@ -50,6 +76,7 @@ def compute_remaining_runs(desired_runs):
                     remaining_runs.append({'api': api, 'tool': tool})
     return remaining_runs
 
+
 # Verify Docker images have been built
 def check_docker_images(remaining_runs):
     images = set()
@@ -59,10 +86,11 @@ def check_docker_images(remaining_runs):
         images.add(remaining_run['api'])
     for image in images:
         try:
-            common.DOCKER_CLIENT.images.get(common.DOCKER_PREFIX+image)
+            common.DOCKER_CLIENT.images.get(common.DOCKER_PREFIX + image)
         except:
             missing_images.append(image)
     return missing_images
+
 
 # Filter out runs with missing images
 def filter_runs_with_missing_images(remaining_runs, missing_images):
@@ -72,27 +100,13 @@ def filter_runs_with_missing_images(remaining_runs, missing_images):
             filtered_remaining_runs.append(remaining_run)
     return filtered_remaining_runs
 
+
 # Check if there are enough resources for another concurrent run
 def check_resources():
-
-    # Hardcoded minimum resource requirements
-    required_ram = 32 * 1024 * 1024 * 1024      # 32GB
-    required_cpus = 14
-
-    # Override minimum requirements from file config, if available
-    with open("restgym-config.yml") as stream:
-        try:
-            config = yaml.safe_load(stream)
-            required_ram = int(config['minimum_ram_gb']) * 1024 * 1024 * 1024
-            required_cpus = int(config['minimum_cpus'])
-
-        except yaml.YAMLError as exc:
-            print("Could not parse RESTgym configuration file. Continuing with default configuration.")
-            print(exc)
-
     available_ram = getattr(psutil.virtual_memory(), 'available')
     available_cpus = (1 - (psutil.cpu_percent() / 100)) * psutil.cpu_count()
-    return available_ram > required_ram and available_cpus > required_cpus
+    return available_ram > MINIMUM_RAM_GB * 1024 * 1024 * 1024 and available_cpus > MINIMUM_CPUS
+
 
 # Deeper check of resources (10 checks each second)
 def deep_check_resources():
@@ -102,18 +116,19 @@ def deep_check_resources():
         time.sleep(1)
     return True
 
-# Execute an experiment run
-def launch_run(api, tool, run_count, total_runs):
 
+# Execute an experiment run
+def launch_run(api, tool, run_count, total_runs, progress, experiment_task):
     attempts = 5
     successfully_completed = False
+    progress.update(experiment_task, advance=1)
 
     while attempts > 0 and not successfully_completed:
 
         attempts -= 1
         error_occurred = False
         run = 'run-' + time.strftime('%Y%m%d-%H%M%S')
-        results_path = f'./results/{api}/{tool}/{run}'
+        results_path = f'{common.RESTGYM_BASE_DIR}/results/{api}/{tool}/{run}'
         ports = {'9090/tcp': get_random_free_tcp_port()}
         env = {
             'API': api,
@@ -123,24 +138,31 @@ def launch_run(api, tool, run_count, total_runs):
         }
 
         os.makedirs(results_path, exist_ok=True, mode=0o777)
+        os.makedirs(f'{results_path}/logs', exist_ok=True, mode=0o777)
 
         message = 'START' if attempts == 4 else 'RETRY'
 
-        print(f" => [{message}] ({run_count}/{total_runs}) Running {tool} on {api} ({run}) with API on port {ports['9090/tcp']}.")
+        with open(f'{results_path}/time-budget.txt', 'a') as f:
+            f.write(f'Time budget: {TIME_BUDGET_MINS} minutes.\n')
+
+        print(
+            f" => [{message}] ({run_count}/{total_runs}) Running {tool} on {api} ({run}) with API on port {ports['9090/tcp']}.")
         with open(f'{results_path}/started.txt', 'a') as f:
             f.write(f'Run started on {time.ctime()}.\n')
 
-        api_container_name = f'{api}_for_{tool}_{run}'
-        tool_container_name = f'{tool}_for_{api}_{run}'
+        api_container_name = f'{common.DOCKER_PREFIX}-{api}-for-{tool}--{run}'
+        tool_container_name = f'{common.DOCKER_PREFIX}-{tool}-for-{api}--{run}'
 
         # Verify Docker images have been built
         try:
-            common.DOCKER_CLIENT.images.get(common.DOCKER_PREFIX+remaining_run['api'])
-            common.DOCKER_CLIENT.images.get(common.DOCKER_PREFIX+remaining_run['tool'])
+            common.DOCKER_CLIENT.images.get(common.DOCKER_PREFIX + remaining_run['api'])
+            common.DOCKER_CLIENT.images.get(common.DOCKER_PREFIX + remaining_run['tool'])
         except:
-            print(f" => [ERROR] ({run_count}/{total_runs}) Execution failed for {remaining_run['tool']} on {remaining_run['api']}. Missing Docker image(s). Have you built them?")
+            print(
+                f" => [ERROR] ({run_count}/{total_runs}) Execution failed for {remaining_run['tool']} on {remaining_run['api']}. Missing Docker image(s). Have you built them?")
             with open(f'{results_path}/errors.txt', 'a') as f:
-                f.write(f"Docker image(s) not found for API ({remaining_run['api']}) or tool ({remaining_run['tool']}).\n\n")
+                f.write(
+                    f"Docker image(s) not found for API ({remaining_run['api']}) or tool ({remaining_run['tool']}).\n\n")
             error_occurred = True
 
         # Start API
@@ -149,40 +171,38 @@ def launch_run(api, tool, run_count, total_runs):
                 api_container = common.DOCKER_CLIENT.containers.run(
                     image=f'{common.DOCKER_PREFIX}{api}',
                     name=api_container_name,
-                    remove=True,
                     environment=env,
                     ports=ports,
-                    volumes=[f'{os.getcwd()}/results/:/results/'],
+                    volumes=[f'{common.RESTGYM_BASE_DIR_HOST}/results/:/results/'],
                     mem_limit="16g",
                     nano_cpus=8_000_000_000,
-                    user='root',
+                    user=f'{os.getuid()}:{os.getgid()}',
                     detach=True
-                    )
+                )
             except Exception as e:
                 with open(f'{results_path}/errors.txt', 'a') as f:
                     f.write(f"Could not start API ({api}) container.\n{e}\n\n")
                 error_occurred = True
-        
+
         # Wait 45 seconds for the API to start
         if not error_occurred:
             time.sleep(45)
         else:
             time.sleep(2)
-        
+
         # Start tool
         if not error_occurred:
             try:
                 tool_container = common.DOCKER_CLIENT.containers.run(
                     image=f'{common.DOCKER_PREFIX}{tool}',
                     name=tool_container_name,
-                    remove=True,
                     environment=env,
                     privileged=True,
                     network_mode='host',
                     mem_limit="16gb",
                     nano_cpus=8_000_000_000,
                     detach=True
-                    )
+                )
                 time.sleep(1)
             except Exception as e:
                 api_container.stop()
@@ -190,11 +210,11 @@ def launch_run(api, tool, run_count, total_runs):
                     f.write(f"Could not start tool ({tool}) container.\n{e}\n\n")
                 error_occurred = True
 
-
         # Perform a health check of containers each minute, for 60 times
         if not error_occurred:
-            for minute in range(1, 61):
+            for minute in range(1, TIME_BUDGET_MINS + 1):
                 time.sleep(60)
+                progress.update(experiment_task, advance=1)
                 try:
                     api_container.reload()
                     if api_container.status == 'exited':
@@ -225,11 +245,16 @@ def launch_run(api, tool, run_count, total_runs):
                         pass
                     error_occurred = True
                     break
-        
+
         # Stop tool container
         if not error_occurred:
             try:
                 tool_container.stop()
+                tool_container.wait()
+                with open(f'{results_path}/logs/{tool}-stdout.log', 'wb') as f_out, open(f'{results_path}/logs/{tool}-stderr.log', 'wb') as f_err:
+                    f_out.write(tool_container.logs(stdout=True, stderr=False))
+                    f_err.write(tool_container.logs(stdout=False, stderr=True))
+                tool_container.remove()
             except Exception as e:
                 error_occurred = True
                 with open(f'{results_path}/errors.txt', 'a') as f:
@@ -238,7 +263,7 @@ def launch_run(api, tool, run_count, total_runs):
                     api_container.stop()
                 except:
                     pass
-        
+
         # Wait 5 seconds to let the API container store the database
         if not error_occurred:
             time.sleep(5)
@@ -247,6 +272,11 @@ def launch_run(api, tool, run_count, total_runs):
         if not error_occurred:
             try:
                 api_container.stop()
+                api_container.wait()
+                with open(f'{results_path}/logs/{api}-stdout.log', 'wb') as f_out, open(f'{results_path}/logs/{api}-stderr.log', 'wb') as f_err:
+                    f_out.write(api_container.logs(stdout=True, stderr=False))
+                    f_err.write(api_container.logs(stdout=False, stderr=True))
+                api_container.remove()
             except Exception as e:
                 error_occurred = True
                 with open(f'{results_path}/errors.txt', 'a') as f:
@@ -263,10 +293,13 @@ def launch_run(api, tool, run_count, total_runs):
             if attempts == 0:
                 print(f" => [ERROR] ({run_count}/{total_runs}) Run of {tool} on {api} ({run}) terminated with errors.")
 
+
 # Main
 if __name__ == "__main__":
     common.welcome()
+    read_config()
     print("This is the run module. It will run up to 20 repetitions of the experiment for each tool and API.")
+    print(f"Time budget: {TIME_BUDGET_MINS} minutes. Minimum CPUs: {MINIMUM_CPUS}. Minimum RAM: {MINIMUM_RAM_GB} GB.")
     try:
         desired_runs = int(input("How many runs? [1-20]: "))
     except:
@@ -275,47 +308,51 @@ if __name__ == "__main__":
     if desired_runs < 1 or desired_runs > 20:
         print("Please specify a number in the range 1-20.")
         sys.exit(1)
-    
+
     remaining_runs = compute_remaining_runs(desired_runs)
-    
+
     # Uncomment next line to launch a manual subset of runs
-    #remaining_runs = [{'api': 'market', 'tool': 'restler'}]
-    
+    # remaining_runs = [{'api': 'market', 'tool': 'restler'}]
+
     missing_images = check_docker_images(remaining_runs)
     if len(missing_images) > 0:
         filtered_remaining_runs = filter_runs_with_missing_images(remaining_runs, missing_images)
-        print(f"Some Docker images required for the experiment have not been built. Skipping experiment runs that involve these images. Only {len(filtered_remaining_runs)} out of {len(remaining_runs)} runs can be launched.")
+        print(
+            f"Some Docker images required for the experiment have not been built. Skipping experiment runs that involve these images. Only {len(filtered_remaining_runs)} out of {len(remaining_runs)} runs can be launched.")
         remaining_runs = filtered_remaining_runs
     else:
         print(f"Runs planned for execution: {len(remaining_runs)}.")
 
     total_runs = len(remaining_runs)
     run_count = 0
-    
+
     input("Press ENTER to start the execution of the experiment (or CTRL+C to cancel)...")
 
-    while len(remaining_runs) > 0:
+    with Progress() as progress:
+        experiment_task = progress.add_task("Running experiment...", total=total_runs*(TIME_BUDGET_MINS+1))
 
-        run_count += 1
+        while len(remaining_runs) > 0:
 
-        # Pick random run
-        remaining_run = remaining_runs.pop(random.randrange(len(remaining_runs)))
+            run_count += 1
 
-        # Stop until resources are available
-        notify_no_resources = True
-        while not deep_check_resources():
-            if notify_no_resources:
-                print(f" => [-WAIT] ({run_count}/{total_runs}) Waiting for system resources to be released.")
-                notify_no_resources = False
-            time.sleep(30)
+            # Pick random run
+            remaining_run = remaining_runs.pop(random.randrange(len(remaining_runs)))
 
-        # Launch run in separate thread
-        run_thread = threading.Thread(
-            target=launch_run,
-            args=(remaining_run['api'], remaining_run['tool'], run_count, total_runs)
+            # Stop until resources are available
+            notify_no_resources = True
+            while not deep_check_resources():
+                if notify_no_resources:
+                    print(f" => [-WAIT] ({run_count}/{total_runs}) Waiting for system resources to be released.")
+                    notify_no_resources = False
+                time.sleep(30)
+
+            # Launch run in separate thread
+            run_thread = threading.Thread(
+                target=launch_run,
+                args=(remaining_run['api'], remaining_run['tool'], run_count, total_runs, progress, experiment_task)
             )
-        run_thread.start()
+            run_thread.start()
 
-        # If not last run, wait 60 seconds before launching next
-        if len(remaining_runs) > 0:
-            time.sleep(60)
+            # If not last run, wait 60 seconds before launching next
+            if len(remaining_runs) > 0:
+                time.sleep(60)

@@ -1,6 +1,3 @@
-import multiprocessing
-import psutil
-import math
 import docker
 import os
 import yaml
@@ -11,6 +8,8 @@ DOCKER_CLIENT = docker.from_env()
 DOCKER_PREFIX = 'restgym-'
 DB_FILENAME = 'results.db'
 CODE_COVERAGE_PATH = '/code-coverage'
+RESTGYM_BASE_DIR_HOST = os.getenv('RESTGYM_BASE_DIR', os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..')))
+RESTGYM_BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
 
 
 # Print welcome ASCII art
@@ -20,9 +19,9 @@ def welcome():
 
 def check_enabled(t, wildcard):
     if t == 'api':
-        config_file = f"{os.getcwd()}/apis/{wildcard}/restgym-api-config.yml"
+        config_file = f"{RESTGYM_BASE_DIR}/apis/{wildcard}/restgym-api-config.yml"
     elif t == 'tool':
-        config_file = f"{os.getcwd()}/tools/{wildcard}/restgym-tool-config.yml"
+        config_file = f"{RESTGYM_BASE_DIR}/tools/{wildcard}/restgym-tool-config.yml"
     else:
         return False
 
@@ -35,13 +34,21 @@ def check_enabled(t, wildcard):
             return False
 
 def get_apis():
-    apis = os.listdir('./apis')
+    apis = os.listdir(f'{RESTGYM_BASE_DIR}/apis')
+    try:
+        apis.remove('.DS_Store')
+    except ValueError:
+        pass
     apis.remove('#api-template')
     apis[:] = [x for x in apis if check_enabled('api', x)]
     return apis
 
 def get_tools():
-    tools = os.listdir('./tools')
+    tools = os.listdir(f'{RESTGYM_BASE_DIR}/tools')
+    try:
+        tools.remove('.DS_Store')
+    except ValueError:
+        pass
     tools.remove('#tool-template')
     tools[:] = [x for x in tools if check_enabled('tool', x)]
     return tools

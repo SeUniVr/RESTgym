@@ -3,13 +3,14 @@ import sqlite3
 import os
 import sys
 import shutil
+import re
 
 
 
 # Collect paths of runs
 def collect_runs():
     runs = set()
-    api_dirs = os.scandir('./results')
+    api_dirs = os.scandir(f'{common.RESTGYM_BASE_DIR}/results')
     for api_dir in api_dirs:
         if api_dir.is_dir():
             tool_dirs = os.scandir(api_dir)
@@ -17,8 +18,25 @@ def collect_runs():
                 if tool_dir.is_dir():
                     run_dirs = os.scandir(tool_dir)
                     for run_dir in run_dirs:
-                        runs.add(run_dir.path)
+                        if run_dir.name != '.DS_Store':
+                            runs.add(run_dir.path)
     return runs
+
+
+# Read time budget from file
+def parse_time_budget(file_path):
+    with open(file_path, 'r') as f:
+        content = f.read()
+
+    # Match "Time budget: X minutes." where X is integer
+    match = re.search(r'Time budget:\s*(\d+)', content)
+
+    if match:
+        minutes = int(match.group(1))
+        if minutes > 0:
+            return minutes
+    return 60
+
 
 # Count code coverage samples
 def count_coverage_samples(run):
@@ -36,8 +54,10 @@ def count_coverage_samples(run):
 def analyze():
     runs = collect_runs()
     print(f"Analyzing {len(runs)} runs.")
-    analized = {}
+    analyzed = {}
     for run in runs:
+        # Get time budget for the run
+        time_budget = parse_time_budget(f'{run}/time-budget.txt')
         # Init dictionary to store results
         result = {}
         # Verify started.txt exists
@@ -53,17 +73,17 @@ def analyze():
             result['interactions_table'] = int(cursor.execute("SELECT COUNT(1) FROM sqlite_master WHERE type='table' AND name = 'interactions'").fetchone()[0]) > 0
         else:
             result['interactions_table'] = False
-        # Verify at least 10_000 requests have been sent
+        # Verify at least 130 requests per minute have been sent
         if result['interactions_table']:
             if "genome-nexus" in run and "schemathesis" in run:
-                result['requests'] = cursor.execute('SELECT COUNT(1) FROM interactions').fetchone()[0] >= 3_000
+                result['requests'] = cursor.execute('SELECT COUNT(1) FROM interactions').fetchone()[0] >= 50 * time_budget
             else:
-                result['requests'] = cursor.execute('SELECT COUNT(1) FROM interactions').fetchone()[0] >= 8_000
+                result['requests'] = cursor.execute('SELECT COUNT(1) FROM interactions').fetchone()[0] >= 130 * time_budget
         else:
             result['requests'] = False
-        # Verify requests span is at least 3500 seconds (almost 1h)
+        # Verify requests span is at least 90% of the time budget
         if result['interactions_table'] and result['requests']:
-            result['time_span'] = cursor.execute('SELECT MAX(request_timestamp) - MIN(request_timestamp) FROM interactions').fetchone()[0] >= 3200
+            result['time_span'] = cursor.execute('SELECT MAX(request_timestamp) - MIN(request_timestamp) FROM interactions').fetchone()[0] >= int(60 * time_budget * 0.9)
         else:
             result['time_span'] = False
 
@@ -72,21 +92,21 @@ def analyze():
         # Verify all code coverage samples exist
         if result['coverage_dir']:
             exec_count, csv_count = count_coverage_samples(run)
-            result['exec_count'] = exec_count >= 730
-            result['csv_count'] = csv_count >= 730
+            result['exec_count'] = exec_count >= 12 * time_budget
+            result['csv_count'] = csv_count >= 12 * time_budget
             result['exec_csv_match'] = exec_count == csv_count
         else:
             result['exec_count'] = False
             result['csv_count'] = False
             result['exec_csv_match'] = False
-        # Add result to retured dictionary
-        analized[run] = result
-        # Print if somethind is wrong
+        # Add result to returned dictionary
+        analyzed[run] = result
+        # Print if something is wrong
         for key in result:
             if result[key] == False:
                 print(f" => Something wrong in {run}: {result}")
                 break
-    return analized
+    return analyzed
 
 # Removes runs with problems
 def clean(runs):

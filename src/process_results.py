@@ -12,7 +12,8 @@ import csv
 
 
 
-MULTITHREADING = True
+MULTITHREADING = False
+DEFAULT_JACCARD_SIMILARITY_THRESHOLD = 0.7
 JACCARD_SIMILARITY_THRESHOLDS = {
     'features-service': 0.8,        # Manually confirmed
     'languagetool': 0.8,            # Manually confirmed
@@ -26,14 +27,14 @@ JACCARD_SIMILARITY_THRESHOLDS = {
     'restcountries': 0.7,           # Manually confirmed (Just one generic error)
     'newbee': 0.7,                  # Manually confirmed
     'blog': 0.7,                    # Manually confirmed (Error with identical text)
-    'google-drive': 0.7             
+    'google-drive': 0.7
 }
 
 
 # Collect paths of completed runs (those with completed.txt file)
 def collect_completed_runs():
     completed_runs = set()
-    api_dirs = os.scandir('./results')
+    api_dirs = os.scandir(f'{common.RESTGYM_BASE_DIR}/results')
     for api_dir in api_dirs:
         if api_dir.is_dir():
             tool_dirs = os.scandir(api_dir)
@@ -48,7 +49,7 @@ def collect_completed_runs():
 # Collect paths of processed run (those with summary.json file)
 def collect_processed_runs():
     processed_runs = set()
-    api_dirs = os.scandir('./results')
+    api_dirs = os.scandir(f'{common.RESTGYM_BASE_DIR}/results')
     for api_dir in api_dirs:
         if api_dir.is_dir():
             tool_dirs = os.scandir(api_dir)
@@ -63,7 +64,7 @@ def collect_processed_runs():
 # Collect paths of summaries
 def collect_summaries():
     summaries = set()
-    api_dirs = os.scandir('./results')
+    api_dirs = os.scandir(f'{common.RESTGYM_BASE_DIR}/results')
     for api_dir in api_dirs:
         if api_dir.is_dir():
             tool_dirs = os.scandir(api_dir)
@@ -74,6 +75,22 @@ def collect_summaries():
                         if os.path.exists(run_dir.path + '/summary.json'):
                             summaries.add(run_dir.path + '/summary.json')
     return summaries
+
+
+# Read time budget from file
+def parse_time_budget(file_path):
+    with open(file_path, 'r') as f:
+        content = f.read()
+
+    # Match "Time budget: X minutes." where X is integer
+    match = re.search(r'Time budget:\s*(\d+)', content)
+
+    if match:
+        minutes = int(match.group(1))
+        if minutes > 0:
+            return minutes
+    return 60
+
 
 # Find minimum number of requests for API
 def extract_minimum_req_num():
@@ -124,13 +141,13 @@ def prepare_database(conn: sqlite3.Connection, count, total):
         else:
             cursor.execute(f"UPDATE interactions SET {column} = NULL")
 
-    # Delete "code_coverage" table if exists
+    # Delete "code_coverage" table if exists, as it was the result of previous analysis and it will be recomputed
     cursor.execute("DROP TABLE IF EXISTS code_coverage")
 
     # Create "code_coverage" table
     cursor.execute("CREATE TABLE code_coverage (id INTEGER PRIMARY KEY, sample_time TEXT, branch_coverage FLOAT, line_coverage FLOAT, method_coverage FLOAT)")
 
-    # Delete "cumulative_results" table if exists
+    # Delete "cumulative_results" table if exists, as it was the result of previous analysis and they will be recomputed
     cursor.execute('DROP TABLE IF EXISTS cumulative_results')
 
     # Create "cumulative_results" table
@@ -141,10 +158,10 @@ def prepare_database(conn: sqlite3.Connection, count, total):
 
 # Get API operations from specification
 def get_operations(api):
-    spec_path = f'./apis/{api}/specifications/{api}-openapi.json'
+    spec_path = f'{common.RESTGYM_BASE_DIR}/apis/{api}/specifications/{api}-openapi.json'
     operations = []
     id = 0
-    methods = ['CONNECT', 'DELETE', 'GET', 'HEAD', 'OPTIONS', 'PATCH', 'POST', 'PUT', 'TRACE']  
+    methods = ['CONNECT', 'DELETE', 'GET', 'HEAD', 'OPTIONS', 'PATCH', 'POST', 'PUT', 'TRACE']
     with open(spec_path, 'r') as spec_file:
         paths = json.load(spec_file)['paths']
         for path in paths.keys():
@@ -162,7 +179,7 @@ def get_operations(api):
 # Assign an operation ID to successful interactions
 def extract_operation_id_from_interaction(path, conn: sqlite3.Connection, count, total):
 
-    api = path.split('/')[2]
+    api = path.split('/')[-3]
     cursor = conn.cursor()
 
     # Get operations from specification and add regex
@@ -170,7 +187,7 @@ def extract_operation_id_from_interaction(path, conn: sqlite3.Connection, count,
     for operation in operations:
         # Start from path
         regex = operation['path']
-        # Replace all occurences of {pathParameters} with [^/]*
+        # Replace all occurrences of {pathParameters} with [^/]*
         while regex.find('{') > 0:
             start = regex.find('{')
             end = regex.find('}') + 1
@@ -185,9 +202,9 @@ def extract_operation_id_from_interaction(path, conn: sqlite3.Connection, count,
 
     # Collect interactions from database
     interactions = cursor.execute('SELECT id, request_method, request_path FROM interactions WHERE response_status_code >= 200 AND response_status_code < 300').fetchall()
-    
-    # Limit one message for API
-    alerted = False
+
+    # Limit to one log alert message for each API
+    already_alerted = False
 
     # Process interactions
     for interaction in interactions:
@@ -197,7 +214,7 @@ def extract_operation_id_from_interaction(path, conn: sqlite3.Connection, count,
             interaction_method = 'GET'
         interaction_path = interaction[2]
         # Remove query parameters
-        interaction_path = interaction_path.split('?')[0]
+        interaction_path = interaction_path.split('?')[0] # TODO: use urllib to parse the path more robustly
         # Consider double slashes same as slashes
         interaction_path = interaction_path.replace('//', '/')
         found_match = False
@@ -211,9 +228,9 @@ def extract_operation_id_from_interaction(path, conn: sqlite3.Connection, count,
                     break
         if not found_match:
             if api != 'languagetool': # Added this to avoid false positives from languagetool
-                if not alerted:
+                if not already_alerted:
                     print(f" => [-WARN] ({count}/{total}) NO_PATH_MATCH: Could not find a path match with {interaction_method} {interaction_path}.")
-                    alerted = True
+                    already_alerted = True
     conn.commit()
 
 # Jaccard similarity
@@ -229,7 +246,7 @@ def preprocess_response_body(api, response_body):
         response_body = response_body.split('\n')[0]
         response_body = response_body.removeprefix("Error: Internal Error: ")
         response_body = response_body.replace("(''' (code 39))", "( (code 39))")
-        # Remove quoted text a non-aphabetic chars
+        # Remove quoted text a non-alphabetic chars
         pattern_squote = "'[^']*'"
         pattern_dquote = '"[^"]*"'
         pattern_not_text = '[^a-zA-Z]+'
@@ -255,7 +272,7 @@ def preprocess_response_body(api, response_body):
 # Bucket unique 5XX
 def bucket_unique_5xx(path, conn: sqlite3.Connection, count, total):
 
-    api = path.split('/')[2]
+    api = path.split('/')[-3]
 
     cursor = conn.cursor()
     interactions = cursor.execute('SELECT id, response_content FROM interactions WHERE response_status_code >= 500').fetchall()
@@ -317,7 +334,7 @@ def compute_code_coverage_on_sample(path_to_csv):
 def compute_code_coverage(path, conn: sqlite3.Connection):
     cursor = conn.cursor()
     # Get coverage files
-    files = os.listdir(path+common.CODE_COVERAGE_PATH)
+    files = os.listdir(path + common.CODE_COVERAGE_PATH)
     # Do not consider EXEC files, only CSV files
     for file in files:
         if file.endswith('.csv'):
@@ -338,10 +355,16 @@ def get_final_coverage(conn: sqlite3.Connection):
 
 # Compute cumulative results in table
 def compute_cumulative_results(conn: sqlite3.Connection):
-    
+
     SAMPLE_STEP = 100
     cursor = conn.cursor()
-    
+
+    #min_and_max_coverage_times = cursor.execute('SELECT MIN(sample_time), MAX(sample_time) FROM code_coverage').fetchone()
+    #min_and_max_request_times = cursor.execute('SELECT MIN(request_timestamp), MAX(response_timestamp) FROM interactions').fetchone()
+    #min_request_time = datetime.datetime.fromtimestamp(min_and_max_request_times[0]-5, datetime.timezone.utc).isoformat()
+    #max_request_time = datetime.datetime.fromtimestamp(min_and_max_request_times[1]-5, datetime.timezone.utc).isoformat()
+    #print(min_and_max_coverage_times[0], min_and_max_coverage_times[1], min_request_time, max_request_time)
+
     i = SAMPLE_STEP
     upper_limit = cursor.execute('SELECT COUNT(1) FROM interactions').fetchone()[0]
 
@@ -355,15 +378,21 @@ def compute_cumulative_results(conn: sqlite3.Connection):
         average_timestamp = round((timestamps_of_interaction[0] + timestamps_of_interaction[1]) / 2)
         time_of_ith_request = datetime.datetime.fromtimestamp(average_timestamp, datetime.timezone.utc)# - datetime.timedelta(hours=2)
         string_time_of_ith_request = time_of_ith_request.isoformat()
-        time_minus_five = time_of_ith_request - datetime.timedelta(seconds=5)
-        string_time_minus_five = time_minus_five.isoformat()
+
+
 
         #print(f"RANGE: {string_time_of_ith_request} - {string_time_minus_five}")
 
-        row = cursor.execute('SELECT branch_coverage, line_coverage, method_coverage FROM code_coverage WHERE sample_time BETWEEN ? AND ?', (string_time_minus_five, string_time_of_ith_request)).fetchone()
+
+        row = cursor.execute('SELECT branch_coverage, line_coverage, method_coverage, ABS(strftime("%s", sample_time) - strftime("%s", ?)) AS time_distance FROM code_coverage ORDER BY time_distance LIMIT 1',
+                             (string_time_of_ith_request,)).fetchone()
+
         branch_coverage = row[0]
         line_coverage = row[1]
         method_coverage = row[2]
+
+        if row[3] > 5:
+            print(" => [ERROR] Code coverage sample too far away in time. ")
 
         cursor.execute('INSERT INTO cumulative_results (interaction_number, success_count, client_error_count, server_error_count, operation_coverage, unique_faults, branch_coverage, line_coverage, method_coverage) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)', (i, successes, client_failures, server_failures, operations_coverage, unique_faults, branch_coverage, line_coverage, method_coverage))
         i += SAMPLE_STEP
@@ -381,7 +410,7 @@ def process_runs(paths):
             else:
                 process_run(path, count, total)
             count += 1
-    
+
     # Aggregate results from summaries
     '''summaries = collect_summaries()
     with open(f"./results/aggregate_results_{datetime.datetime.now().strftime('%Y%m%dT%H.%M.%S')}.csv", mode='w') as aggregate_file:
@@ -396,8 +425,8 @@ def process_runs(paths):
 
     minimums = extract_minimum_req_num()
 
-    with open(f"./results/aggregate_results_req_{datetime.datetime.now().strftime('%Y%m%dT%H.%M.%S')}.csv", mode='w') as aggregate_file:
-        aggregate_writer = csv.writer(aggregate_file, delimiter=',', quotechar='"', quoting=csv.QUOTE_MINIMAL)        
+    with open(f"{common.RESTGYM_BASE_DIR}/results/aggregate_results_req_{datetime.datetime.now().strftime('%Y%m%dT%H.%M.%S')}.csv", mode='w') as aggregate_file:
+        aggregate_writer = csv.writer(aggregate_file, delimiter=',', quotechar='"', quoting=csv.QUOTE_MINIMAL)
         aggregate_writer.writerow(['api', 'tool', 'run', 'interactions', '2XX', '4XX', '5XX', '401', '403', 'covered_operations', 'unique_5XX', 'branch_coverage', 'line_coverage', 'method_coverage', 'area_2XX', 'area_4XX', 'area_5XX', 'area_401', 'area_403', 'area_covered_operations', 'area_unique_5XX', 'area_branch_coverage', 'area_line_coverage', 'area_method_coverage'])
         for processed_run in collect_processed_runs():
             api_info = processed_run.split('/')
@@ -405,8 +434,8 @@ def process_runs(paths):
             cursor = conn.cursor()
             result = cursor.execute("SELECT * FROM cumulative_results WHERE interaction_number = ?", (minimums[api_info[2]],)).fetchone()
             area = cursor.execute('SELECT SUM(success_count), SUM(client_error_count), SUM(server_error_count), SUM(operation_coverage), SUM(unique_faults), SUM(branch_coverage), SUM(line_coverage), SUM(method_coverage) FROM cumulative_results WHERE interaction_number <= ?', (minimums[api_info[2]],)).fetchone()
-            aggregate_writer.writerow([api_info[2], api_info[3], api_info[4], result[1], result[2], result[3], result[4], "-", "-", result[5], result[6], result[7], result[8], result[9], area[0], area[1], area[2], "-", "-", area[3], area[4], area[5], area[6], area[7]])
-    
+            aggregate_writer.writerow([api_info[-3], api_info[-2], api_info[-1], result[1], result[2], result[3], result[4], "-", "-", result[5], result[6], result[7], result[8], result[9], area[0], area[1], area[2], "-", "-", area[3], area[4], area[5], area[6], area[7]])
+
     print("Aggregated results saved to CSV file.")
 
 # Process a single run (for parallelization purposes)
@@ -415,7 +444,7 @@ def process_run(path, count, total):
     print(f" => [-INFO] ({count}/{total}) Working on run: {path}", flush=True)
 
     conn = sqlite3.connect(path + '/' + common.DB_FILENAME)
-    
+
     # Prepare database to contain new info
     prepare_database(conn, count, total)
     # Infer API operation from interaction
@@ -451,14 +480,14 @@ if __name__ == "__main__":
     processed_runs = collect_processed_runs()
     not_processed_runs = completed_runs.difference(processed_runs)
     print(f"Found {len(completed_runs)}, {len(processed_runs)} of which already processed ({len(not_processed_runs)} to process).")
-    
+
     if len(completed_runs) == 0:
         print("No runs to process. Please execute the experiment first.")
         sys.exit(0)
-    
+
     print(f"[1] Process all completed runs ({len(completed_runs)})")
     print(f"[2] Process only newly completed runs ({len(not_processed_runs)})")
-    
+
     choice = input("Your choice: ")
     if choice != '1' and choice != '2':
         print("Invalid choice!")

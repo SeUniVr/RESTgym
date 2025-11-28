@@ -1,6 +1,6 @@
 # RESTgym
 
-A Flexible Infrastructure for Empirical Assessment of Automated REST API Testing Tools
+A Flexible Infrastructure for Empirical Assessment of Automated REST API Black-Box Testing Tools
 
 ---
 
@@ -17,29 +17,33 @@ RESTgym is an infrastructure designed for the empirical assessment of REST API t
 - Integrity checks on completed testing sessions and re-execution of any that are found to be corrupted
 - Compilation of comprehensive reports for each experimental testing session, as well as a cumulative report summarizing all the testing sessions.
 
-### Installation
+### Included tools and APIs
 
-Before installing RESTgym, ensure that your system has Python and Docker installed, as these are essential dependencies for RESTgym.
+#### Tools
 
-Initialize a Python virtual environment with:
+#### APIs
 
-```
-python -m venv venv
-```
+### Changelog
 
-Activate the virtual environment with:
-```
-source venv/bin/activate
-```
+#### Version 2.0.0
+- Full Docker support: now also RESTgym itself executes within a Docker container, without requiring Python and dependencies to be installed in the host machine or in a Python virtual environment. **Docker is now the only requirement.**
+- [TODO] Now stdout and stderr of API and tool containers are stored to file.
+- [TODO] Fixed file permission issues that prevented the RESTgym to access some of the results in the `results/` folder.
+- Improved SQL query to map HTTP interactions times to code coverage times.
+- [TODO] Added progress bar in long-executing scripts.
+- [TODO] An integrity check on the SQLite database is now performed before extracting results.
+- Fixed a crash caused by the presence of `.DS_Store` files (macOS system files).
+- [TODO] Added API configuration item to customize Jaccard similarity thresholds for each API when computing similarity of error messages.
+- [TODO] API port selection is now performed by Docker and not by RESTgym.
 
-Install the required Python libraries with:
-```
-pip install -r requirements.txt
-```
+### Requirements
+
+- Linux or macOS operating systems. RESTgym has been tested on Ubuntu 22.04, Ubuntu 24.04, and macOS 26.1
+- Docker
 
 ### Configuration
 
-Most configuration settings for RESTgym are prompted at runtime via the command line. However, some settings can be specified in YAML configuration files. 
+Most configuration settings for RESTgym are prompted at runtime via the command line. However, some global settings can be specified in YAML configuration files. 
 Specifically, RESTgym includes a general configuration file named `restgym-config.yml`, located in the root directory. In this file, you can define two parameters: the minimum number of CPUs and the minimum amount of RAM required on your system before initiating a testing session. These values are utilized for parallelization and further test sessions are executed in parallel as long the specified resources are available. The RESTgym configuration file is in the following format:
 
 ```yaml
@@ -61,11 +65,17 @@ By default, only two tools (DeepREST and RESTler) and two APIs (Market and SCS) 
 
 ### Usage
 
+Make the RESTgym shell script executable with:
+
+```
+sudo chmod +x restgym.sh
+```
+
 Please follow the steps below to conduct your experiment:
 
 #### 1. Building or downloading Docker images
 
-`python3 build.py`
+`./restgym.sh b`
 
 This script manages the building of Docker images for the APIs and testing tools. It builds local images (if available) and downloads our pre-built images from our repositories on Docker Hub ([https://hub.docker.com/u/restgym](https://hub.docker.com/u/restgym)).
 
@@ -73,7 +83,7 @@ This script manages the building of Docker images for the APIs and testing tools
 
 #### 2. Experiment execution
 
-`python3 run.py`
+`./restgym.sh l`
 
 This script orchestrates the execution of testing sessions for each testing tool across all APIs, allowing for multiple repetitions. The executions are parallelized to minimize overall execution time. Upon launch, the script prompts the user for the number of repetitions for each testing tool and API configuration, then executes the remaining sessions. For example, if a previous execution of the script was set to run 3 repetitions and the user relaunches the script specifying a total of 5 repetitions, the script will only execute the 2 remaining repetitions.
 
@@ -81,7 +91,7 @@ This script orchestrates the execution of testing sessions for each testing tool
 
 #### 3. Integrity check
 
-`python3 run.py`
+`./restgym.sh v`
 
 This script check the integrity of the executed testing sessions. It ensures that metrics were consistently collected throughout the experiment, verifies that an adequate number of requests were recorded by the proxy, and confirms that coverage samples are always increasing (as coverage cannot decrease).
 
@@ -89,11 +99,15 @@ In the event of a corrupted execution, the user will be prompted to decide wheth
 
 #### 4. Processing raw results
 
-`python3 process_results.py`
+`./restgym.sh a`
 
 This script processes the raw data to extract measures of effectiveness and efficiency, generating a comprehensive report for each execution, along with a cumulative report that summarizes all executions.
 
 **Output:** Comprehensive results are generated for each experimental testing session based on raw data and are saved in a JSON file located in the appropriate sub-folder within the `results/` directory. Additionally, a cumulative summary of all experimental execution results is stored in CSV format in the main `results/` folder.
+
+#### Force stop
+
+To force the stop and remove all the running containers related to RESTgym, please run: `./restgym.sh s`
 
 ### Extending RESTgym with your testing tool or API
 
