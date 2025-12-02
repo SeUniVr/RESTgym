@@ -39,3 +39,12 @@ The last command of a `Dockerfile` starting with `CMD` instructs Docker with wha
 - `sh /tool/config.sh` dynamically configures the tool for the current testing session, by providing the correct API specification of the API under test and the port on which the API is reachable.
 - `cd /tool` changes the working directory to the tool's directory.
 - `while true; do java -jar resttestgen.jar; done` launches RestTestGen indefinitely. Since the `java` command is encapsulated into a while true loop, if the tool execution terminates, the tool is re-launched indefinitely. RESTgym will take care of killing the container when the testing time budget has ended.
+
+## Environment variables
+
+The tool should be configurable via the following environment variables:
+- `HOST`: the hostname or IP address of the machine in which the API is running [**mandatory**].
+- `PORT`: the TCP port to which the API is listening [**mandatory**].
+- `TIME_BUDGET`: the time budget <u>in minutes</u> of the testing session being executed. We recommend the tool to run indefinitely in the container using a while true loop. This variable is only useful if the tool's strategy depends on the time budget, such that the tool is configured to maximize its effectiveness given the time budget. [**optional**]
+
+If the tool does not support host and port overriding, but uses the server documented in the specification, we suggest to write an entrypoint script to overwrite the server in the specification with `http://$HOST:$PORT/`.
