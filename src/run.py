@@ -1,5 +1,3 @@
-import configparser
-
 import common
 import socket
 import random
@@ -133,20 +131,18 @@ def launch_run(api, tool, run_count, total_runs, progress, experiment_task):
         env = {
             'API': api,
             'TOOL': tool,
-            'RUN': run,
-            'PORT': ports['9090/tcp']
+            'RUN': run
         }
 
         os.makedirs(results_path, exist_ok=True, mode=0o777)
-        os.makedirs(f'{results_path}/logs', exist_ok=True, mode=0o777)
+        os.makedirs(f'{results_path}{common.LOGS_PATH}', exist_ok=True, mode=0o777)
 
         message = 'START' if attempts == 4 else 'RETRY'
 
         with open(f'{results_path}/time-budget.txt', 'a') as f:
             f.write(f'Time budget: {TIME_BUDGET_MINS} minutes.\n')
 
-        print(
-            f" => [{message}] ({run_count}/{total_runs}) Running {tool} on {api} ({run}) with API on port {ports['9090/tcp']}.")
+        print(f" => [{message}] ({run_count}/{total_runs}) Running {tool} on {api} ({run}).")
         with open(f'{results_path}/started.txt', 'a') as f:
             f.write(f'Run started on {time.ctime()}.\n')
 
@@ -174,11 +170,12 @@ def launch_run(api, tool, run_count, total_runs, progress, experiment_task):
                     environment=env,
                     ports=ports,
                     volumes=[f'{common.RESTGYM_BASE_DIR_HOST}/results/:/results/'],
-                    mem_limit="16g",
+                    mem_limit='16g',
                     nano_cpus=8_000_000_000,
                     user=f'{os.getuid()}:{os.getgid()}',
                     detach=True
                 )
+
             except Exception as e:
                 with open(f'{results_path}/errors.txt', 'a') as f:
                     f.write(f"Could not start API ({api}) container.\n{e}\n\n")
@@ -192,6 +189,9 @@ def launch_run(api, tool, run_count, total_runs, progress, experiment_task):
 
         # Start tool
         if not error_occurred:
+            # Get the host port assigned by docker
+            api_container.reload()
+            env['PORT'] = str(int(api_container.attrs['NetworkSettings']['Ports']['9090/tcp'][0]['HostPort']))
             try:
                 tool_container = common.DOCKER_CLIENT.containers.run(
                     image=f'{common.DOCKER_PREFIX}{tool}',
@@ -199,7 +199,7 @@ def launch_run(api, tool, run_count, total_runs, progress, experiment_task):
                     environment=env,
                     privileged=True,
                     network_mode='host',
-                    mem_limit="16gb",
+                    mem_limit='16gb',
                     nano_cpus=8_000_000_000,
                     detach=True
                 )
@@ -251,7 +251,7 @@ def launch_run(api, tool, run_count, total_runs, progress, experiment_task):
             try:
                 tool_container.stop()
                 tool_container.wait()
-                with open(f'{results_path}/logs/{tool}-stdout.log', 'wb') as f_out, open(f'{results_path}/logs/{tool}-stderr.log', 'wb') as f_err:
+                with open(f'{results_path}{common.LOGS_PATH}/{tool}-stdout.log', 'wb') as f_out, open(f'{results_path}{common.LOGS_PATH}/{tool}-stderr.log', 'wb') as f_err:
                     f_out.write(tool_container.logs(stdout=True, stderr=False))
                     f_err.write(tool_container.logs(stdout=False, stderr=True))
                 tool_container.remove()
@@ -273,7 +273,7 @@ def launch_run(api, tool, run_count, total_runs, progress, experiment_task):
             try:
                 api_container.stop()
                 api_container.wait()
-                with open(f'{results_path}/logs/{api}-stdout.log', 'wb') as f_out, open(f'{results_path}/logs/{api}-stderr.log', 'wb') as f_err:
+                with open(f'{results_path}{common.LOGS_PATH}/{api}-stdout.log', 'wb') as f_out, open(f'{results_path}{common.LOGS_PATH}/{api}-stderr.log', 'wb') as f_err:
                     f_out.write(api_container.logs(stdout=True, stderr=False))
                     f_err.write(api_container.logs(stdout=False, stderr=True))
                 api_container.remove()
@@ -331,6 +331,8 @@ if __name__ == "__main__":
     with Progress() as progress:
         experiment_task = progress.add_task("Running experiment...", total=total_runs*(TIME_BUDGET_MINS+1))
 
+        threads = []
+
         while len(remaining_runs) > 0:
 
             run_count += 1
@@ -352,7 +354,14 @@ if __name__ == "__main__":
                 args=(remaining_run['api'], remaining_run['tool'], run_count, total_runs, progress, experiment_task)
             )
             run_thread.start()
+            threads.append(run_thread)
 
             # If not last run, wait 60 seconds before launching next
             if len(remaining_runs) > 0:
                 time.sleep(60)
+
+        # Wait for all the threads to complete
+        for t in threads:
+            t.join()
+
+        print("Execution completed.")

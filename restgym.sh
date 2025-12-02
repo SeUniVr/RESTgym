@@ -7,7 +7,7 @@ RESTGYM_IMAGE_NAME="restgym"
 RESTGYM_BASE_DIR="$(cd "$(dirname "$0")" && pwd)"
 DOCKER_SOCKET_HOST="/var/run/docker.sock"
 DOCKER_SOCKET_CONTAINER="/var/run/docker.sock"
-DOCKER_BASE_COMMAND="$DOCKER_CMD run --rm --name restgym -it -v $DOCKER_SOCKET_HOST:$DOCKER_SOCKET_CONTAINER -v $RESTGYM_BASE_DIR/apis:/app/apis:ro -v $RESTGYM_BASE_DIR/tools:/app/tools:ro -v $RESTGYM_BASE_DIR/results:/app/results -v $RESTGYM_BASE_DIR/restgym-config.yml:/app/restgym-config.yml:ro -e RESTGYM_BASE_DIR=$RESTGYM_BASE_DIR restgym"
+DOCKER_BASE_COMMAND="$DOCKER_CMD run --rm --name restgym -it -v $DOCKER_SOCKET_HOST:$DOCKER_SOCKET_CONTAINER -v $RESTGYM_BASE_DIR/apis:/app/apis:ro -v $RESTGYM_BASE_DIR/tools:/app/tools:ro -v $RESTGYM_BASE_DIR/results:/app/results -v $RESTGYM_BASE_DIR/restgym-config.yml:/app/restgym-config.yml:ro -e RESTGYM_BASE_DIR=$RESTGYM_BASE_DIR $RESTGYM_IMAGE_NAME"
 
 
 # Check if Docker is installed, else exit
@@ -84,6 +84,14 @@ case "$1" in
     ;;
 
 
+  # Removes the RESTgym image from the local Docker image registry
+  remove|r)
+    echo "Removing $RESTGYM Docker image."
+    $DOCKER_CMD rmi $RESTGYM_IMAGE_NAME
+    echo "Removed."
+  ;;
+
+
   # Print current version
   version)
     echo "$RESTGYM v2.0.0"
@@ -91,7 +99,7 @@ case "$1" in
 
 
   *)
-    echo "Usage: $0 {build-images|b|launch-experiment|l|verify-data|v|analyze-data|a|force-stop|s|version}" >&2
+    echo "Usage: $0 {build-images|b|launch-experiment|l|verify-data|v|analyze-data|a|force-stop|s|remove|r|version}" >&2
     exit 1
     ;;
 esac

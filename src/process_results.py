@@ -9,10 +9,11 @@ import multiprocessing
 import math
 import datetime
 import csv
+from rich.progress import Progress
 
 
 
-MULTITHREADING = False
+MULTITHREADING = True
 DEFAULT_JACCARD_SIMILARITY_THRESHOLD = 0.7
 JACCARD_SIMILARITY_THRESHOLDS = {
     'features-service': 0.8,        # Manually confirmed
@@ -30,7 +31,6 @@ JACCARD_SIMILARITY_THRESHOLDS = {
     'google-drive': 0.7
 }
 
-
 # Collect paths of completed runs (those with completed.txt file)
 def collect_completed_runs():
     completed_runs = set()
@@ -45,6 +45,22 @@ def collect_completed_runs():
                         if os.path.exists(run_dir.path + '/completed.txt'):
                             completed_runs.add(run_dir.path)
     return completed_runs
+
+
+# Collect paths of completed runs (those with completed.txt file)
+def collect_verified_runs():
+    verified_runs = set()
+    api_dirs = os.scandir(f'{common.RESTGYM_BASE_DIR}/results')
+    for api_dir in api_dirs:
+        if api_dir.is_dir():
+            tool_dirs = os.scandir(api_dir)
+            for tool_dir in tool_dirs:
+                if tool_dir.is_dir():
+                    run_dirs = os.scandir(tool_dir)
+                    for run_dir in run_dirs:
+                        if os.path.exists(run_dir.path + '/verified.txt'):
+                            verified_runs.add(run_dir.path)
+    return verified_runs
 
 # Collect paths of processed run (those with summary.json file)
 def collect_processed_runs():
@@ -403,45 +419,49 @@ def process_runs(paths):
     threads = math.floor(multiprocessing.cpu_count() * 0.9)
     count = 1
     total = len(paths)
-    with concurrent.futures.ThreadPoolExecutor(threads) as executor:
-        for path in paths:
-            if MULTITHREADING:
-                executor.submit(process_run, path, count, total)
-            else:
-                process_run(path, count, total)
-            count += 1
 
-    # Aggregate results from summaries
-    '''summaries = collect_summaries()
-    with open(f"./results/aggregate_results_{datetime.datetime.now().strftime('%Y%m%dT%H.%M.%S')}.csv", mode='w') as aggregate_file:
-        aggregate_writer = csv.writer(aggregate_file, delimiter=',', quotechar='"', quoting=csv.QUOTE_MINIMAL)        
-        aggregate_writer.writerow(['api', 'tool', 'run', 'interactions', '2XX', '4XX', '5XX', '401', '403', 'covered_operations', 'unique_5XX', 'branch_coverage', 'line_coverage', 'method_coverage'])
-        for summary in summaries:
-            api_info = summary.split('/')
-            with open(summary) as f:
-                d = json.load(f)
-                aggregate_writer.writerow([api_info[2], api_info[3], api_info[4], d['interactions']['count'], d['interactions']['2XX'], d['interactions']['4XX'], d['interactions']['5XX'], d['interactions']['401'], d['interactions']['403'], d['interactions']['covered_operations'], d['interactions']['unique_5XX'], d['final_code_coverage']['branch'], d['final_code_coverage']['line'], d['final_code_coverage']['method']])
-    print("Aggregated results saved to CSV file.")'''
+    with Progress() as progress:
+        analysis_task = progress.add_task("Analyzing...", total=total)
 
-    minimums = extract_minimum_req_num()
+        with concurrent.futures.ThreadPoolExecutor(threads) as executor:
+            for path in paths:
+                if MULTITHREADING:
+                    executor.submit(process_run, path, count, total, progress, analysis_task)
+                else:
+                    process_run(path, count, total, progress, analysis_task)
+                count += 1
 
-    with open(f"{common.RESTGYM_BASE_DIR}/results/aggregate_results_req_{datetime.datetime.now().strftime('%Y%m%dT%H.%M.%S')}.csv", mode='w') as aggregate_file:
-        aggregate_writer = csv.writer(aggregate_file, delimiter=',', quotechar='"', quoting=csv.QUOTE_MINIMAL)
-        aggregate_writer.writerow(['api', 'tool', 'run', 'interactions', '2XX', '4XX', '5XX', '401', '403', 'covered_operations', 'unique_5XX', 'branch_coverage', 'line_coverage', 'method_coverage', 'area_2XX', 'area_4XX', 'area_5XX', 'area_401', 'area_403', 'area_covered_operations', 'area_unique_5XX', 'area_branch_coverage', 'area_line_coverage', 'area_method_coverage'])
-        for processed_run in collect_processed_runs():
-            api_info = processed_run.split('/')
-            conn = sqlite3.connect(processed_run + '/' + common.DB_FILENAME)
-            cursor = conn.cursor()
-            result = cursor.execute("SELECT * FROM cumulative_results WHERE interaction_number = ?", (minimums[api_info[2]],)).fetchone()
-            area = cursor.execute('SELECT SUM(success_count), SUM(client_error_count), SUM(server_error_count), SUM(operation_coverage), SUM(unique_faults), SUM(branch_coverage), SUM(line_coverage), SUM(method_coverage) FROM cumulative_results WHERE interaction_number <= ?', (minimums[api_info[2]],)).fetchone()
-            aggregate_writer.writerow([api_info[-3], api_info[-2], api_info[-1], result[1], result[2], result[3], result[4], "-", "-", result[5], result[6], result[7], result[8], result[9], area[0], area[1], area[2], "-", "-", area[3], area[4], area[5], area[6], area[7]])
+        # Aggregate results from summaries
+        '''summaries = collect_summaries()
+        with open(f"./results/aggregate_results_{datetime.datetime.now().strftime('%Y%m%dT%H.%M.%S')}.csv", mode='w') as aggregate_file:
+            aggregate_writer = csv.writer(aggregate_file, delimiter=',', quotechar='"', quoting=csv.QUOTE_MINIMAL)        
+            aggregate_writer.writerow(['api', 'tool', 'run', 'interactions', '2XX', '4XX', '5XX', '401', '403', 'covered_operations', 'unique_5XX', 'branch_coverage', 'line_coverage', 'method_coverage'])
+            for summary in summaries:
+                api_info = summary.split('/')
+                with open(summary) as f:
+                    d = json.load(f)
+                    aggregate_writer.writerow([api_info[2], api_info[3], api_info[4], d['interactions']['count'], d['interactions']['2XX'], d['interactions']['4XX'], d['interactions']['5XX'], d['interactions']['401'], d['interactions']['403'], d['interactions']['covered_operations'], d['interactions']['unique_5XX'], d['final_code_coverage']['branch'], d['final_code_coverage']['line'], d['final_code_coverage']['method']])
+        print("Aggregated results saved to CSV file.")'''
 
-    print("Aggregated results saved to CSV file.")
+        minimums = extract_minimum_req_num()
+
+        with open(f"{common.RESTGYM_BASE_DIR}/results/aggregate_results_req_{datetime.datetime.now().strftime('%Y%m%dT%H.%M.%S')}.csv", mode='w') as aggregate_file:
+            aggregate_writer = csv.writer(aggregate_file, delimiter=',', quotechar='"', quoting=csv.QUOTE_MINIMAL)
+            aggregate_writer.writerow(['api', 'tool', 'run', 'interactions', '2XX', '4XX', '5XX', '401', '403', 'covered_operations', 'unique_5XX', 'branch_coverage', 'line_coverage', 'method_coverage', 'area_2XX', 'area_4XX', 'area_5XX', 'area_401', 'area_403', 'area_covered_operations', 'area_unique_5XX', 'area_branch_coverage', 'area_line_coverage', 'area_method_coverage'])
+            for processed_run in collect_processed_runs():
+                api_info = processed_run.split('/')
+                conn = sqlite3.connect(processed_run + '/' + common.DB_FILENAME)
+                cursor = conn.cursor()
+                result = cursor.execute("SELECT * FROM cumulative_results WHERE interaction_number = ?", (minimums[api_info[2]],)).fetchone()
+                area = cursor.execute('SELECT SUM(success_count), SUM(client_error_count), SUM(server_error_count), SUM(operation_coverage), SUM(unique_faults), SUM(branch_coverage), SUM(line_coverage), SUM(method_coverage) FROM cumulative_results WHERE interaction_number <= ?', (minimums[api_info[2]],)).fetchone()
+                aggregate_writer.writerow([api_info[-3], api_info[-2], api_info[-1], result[1], result[2], result[3], result[4], "-", "-", result[5], result[6], result[7], result[8], result[9], area[0], area[1], area[2], "-", "-", area[3], area[4], area[5], area[6], area[7]])
+
+        print("Aggregated results saved to CSV file.")
 
 # Process a single run (for parallelization purposes)
-def process_run(path, count, total):
+def process_run(path, count, total, progress, task):
 
-    print(f" => [-INFO] ({count}/{total}) Working on run: {path}", flush=True)
+    print(f" => [-INFO] ({count}/{total}) Analyzing run: {path}", flush=True)
 
     conn = sqlite3.connect(path + '/' + common.DB_FILENAME)
 
@@ -470,30 +490,38 @@ def process_run(path, count, total):
     with open(path+'/summary.json', 'w', encoding='utf-8') as f:
         json.dump(summary, f, ensure_ascii=False, indent=4)
 
-    print(f" => [-END-] ({count}/{total}) Processing completed.")
+    print(f" => [-END-] ({count}/{total}) Analysis completed.")
+
+    progress.update(task, advance=1)
 
 # Main
 if __name__ == "__main__":
     common.welcome()
-    print("This is the process_results module. It will process experiment results to extract statistics.")
-    completed_runs = collect_completed_runs()
+    print("This is the analysis module. It will process raw experiment data to extract cumulative results.")
+    print("This module will only process runs that passed the verification.")
+    verified_runs = collect_verified_runs()
+    completed_but_not_verified_runs = collect_completed_runs().difference(verified_runs)
     processed_runs = collect_processed_runs()
-    not_processed_runs = completed_runs.difference(processed_runs)
-    print(f"Found {len(completed_runs)}, {len(processed_runs)} of which already processed ({len(not_processed_runs)} to process).")
+    not_processed_runs = verified_runs.difference(processed_runs)
 
-    if len(completed_runs) == 0:
-        print("No runs to process. Please execute the experiment first.")
+    if len(completed_but_not_verified_runs) > 0:
+        print("WARNING: Some runs are completed but not verified. This script will only analyze runs that passed the verification.")
+
+    print(f"Found {len(verified_runs)} verified run, {len(processed_runs)} of which have already been analyzed ({len(not_processed_runs)} to analyze).")
+
+    if len(verified_runs) == 0:
+        print("No runs to process. Please execute the experiment, verify the executed runs, and the try again.")
         sys.exit(0)
 
-    print(f"[1] Process all completed runs ({len(completed_runs)})")
-    print(f"[2] Process only newly completed runs ({len(not_processed_runs)})")
+    print(f"[1] Analyze all completed and verified runs ({len(verified_runs)})")
+    print(f"[2] Analyze only newly completed and verified runs ({len(not_processed_runs)})")
 
     choice = input("Your choice: ")
     if choice != '1' and choice != '2':
         print("Invalid choice!")
         sys.exit(1)
     elif choice == '1':
-        process_runs(completed_runs)
+        process_runs(verified_runs)
     elif choice == '2':
         if len(not_processed_runs) == 0:
             print("All runs have already been processed.")
