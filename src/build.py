@@ -24,7 +24,7 @@ def build(image):
         print(f" => {image}: Already available in system.")
     except:
         sub_path = 'tools' if image in common.get_tools() else 'apis'
-        path = f"./{sub_path}/{image}"
+        path = f"{common.RESTGYM_BASE_DIR}/{sub_path}/{image}"
         print(f" => {image}: Building...")
         if os.path.exists(f"{path}/Dockerfile"):
             try:
@@ -39,9 +39,6 @@ def build(image):
 def build_all():
     print("Building images...")
     images = common.get_apis() + common.get_tools()
-
-    # Uncomment next line to limit the build to some images
-    #images = ['resttestgen']
 
     threads = math.floor(multiprocessing.cpu_count() * 0.9)
 
