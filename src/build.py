@@ -28,10 +28,16 @@ def build(image):
         print(f" => {image}: Building...")
         if os.path.exists(f"{path}/Dockerfile"):
             try:
-                common.DOCKER_CLIENT.images.build(path='.', dockerfile=f"{path}/Dockerfile", tag=common.DOCKER_PREFIX+image, rm=True, forcerm=True)
+                common.DOCKER_CLIENT.images.build(
+                    path='.',
+                    dockerfile=f'{path}/Dockerfile',
+                    tag=common.DOCKER_PREFIX+image,
+                    rm=True,
+                    forcerm=True
+                )
                 print(f" => {image}: Done.")
             except Exception as e: 
-                print(f" => {image}: An error occurend during the build. Skipping.")
+                print(f" => {image}: An error occurred during the build. Skipping.")
                 print(f" => {image}: {e}")
         else:
             print(f" => {image}: Dockerfile not found. Skipping.")
