@@ -131,7 +131,9 @@ def launch_run(api, tool, run_count, total_runs, progress, experiment_task):
         env = {
             'API': api,
             'TOOL': tool,
-            'RUN': run
+            'RUN': run,
+            'TIME_BUDGET': TIME_BUDGET_MINS,
+            'HOST': 'localhost'
         }
 
         os.makedirs(results_path, exist_ok=True, mode=0o777)
