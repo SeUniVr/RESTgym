@@ -21,7 +21,7 @@ def clean_builds():
 def build(image):
     try:
         common.DOCKER_CLIENT.images.get(common.DOCKER_PREFIX+image)
-        print(f" => {image}: Already available in system.")
+        print(f" => {image}: Already available in the local image registry.")
     except:
         sub_path = 'tools' if image in common.get_tools() else 'apis'
         path = f"{common.RESTGYM_BASE_DIR}/{sub_path}/{image}"
@@ -29,7 +29,7 @@ def build(image):
         if os.path.exists(f"{path}/Dockerfile"):
             try:
                 common.DOCKER_CLIENT.images.build(
-                    path='.',
+                    path=f'{common.RESTGYM_BASE_DIR}',
                     dockerfile=f'{path}/Dockerfile',
                     tag=common.DOCKER_PREFIX+image,
                     rm=True,

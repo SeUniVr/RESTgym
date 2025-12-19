@@ -42,6 +42,10 @@ RESTgym is an infrastructure designed for the empirical assessment of REST API t
 
 ### Changelog
 
+#### Version 2.0.1
+- Added `TIME_BUDGET` (in minutes) and `HOST` env variables support for future use.
+- Fixed build script that in some cases provided wrong path to Docker build context.
+
 #### Version 2.0.0
 - Full Docker support: now also RESTgym itself executes within a Docker container, without requiring Python and dependencies to be installed in the host machine or in a Python virtual environment. **Docker is now the only requirement.**
 - Testing time budget can now be configured via the configuration file.
